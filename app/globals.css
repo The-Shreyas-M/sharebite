@@ -1,26 +1,99 @@
 @import "tailwindcss";
 
+@theme {
+  --font-sans: "Inter", system-ui, sans-serif;
+
+  /* NGO: Green/Nature */
+  --color-ngo-primary: #22c55e;
+  --color-ngo-secondary: #16a34a;
+  --color-ngo-accent: #4ade80;
+  --color-ngo-surface: #052e16;
+  --color-ngo-muted: #14532d;
+
+  /* Donor: Blue/Orange */
+  --color-donor-primary: #3b82f6;
+  --color-donor-secondary: #2563eb;
+  --color-donor-accent: #fb923c;
+  --color-donor-surface: #0c1a3a;
+  --color-donor-muted: #1e3a5f;
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #09090b;
+  --bg-card: #18181b;
+  --bg-elevated: #27272a;
+  --border: #3f3f46;
+  --border-subtle: #27272a;
+  --text-primary: #fafafa;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--bg-elevated); border-radius: 3px; }
+
+/* ── Input base ── */
+input, textarea, select {
+  background: var(--bg-elevated) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border) !important;
+}
+input::placeholder { color: var(--text-muted) !important; }
+
+/* ── Cards ── */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 1rem;
+}
+
+/* ── Glass ── */
+.glass {
+  background: rgba(24, 24, 27, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255,255,255,0.07);
+}
+
+/* ── Gradients ── */
+.gradient-ngo {
+  background: linear-gradient(135deg, #166534 0%, #15803d 50%, #16a34a 100%);
+}
+.gradient-donor {
+  background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 60%, #ea580c 100%);
+}
+.gradient-hero-ngo {
+  background: linear-gradient(135deg, #052e16 0%, #14532d 40%, #166534 100%);
+}
+.gradient-hero-donor {
+  background: linear-gradient(135deg, #0c1a3a 0%, #1e3a8a 40%, #7c2d12 100%);
+}
+
+/* ── Status badges ── */
+.badge-available  { background: rgba(34,197,94,0.15);  color: #86efac; border: 1px solid rgba(34,197,94,0.3); }
+.badge-claimed    { background: rgba(251,146,60,0.15); color: #fdba74; border: 1px solid rgba(251,146,60,0.3); }
+.badge-delivered  { background: rgba(59,130,246,0.15); color: #93c5fd; border: 1px solid rgba(59,130,246,0.3); }
+.badge-confirmed  { background: rgba(34,197,94,0.15);  color: #86efac; border: 1px solid rgba(34,197,94,0.3); }
+
+/* ── Glow effects ── */
+.glow-green { box-shadow: 0 0 30px rgba(34,197,94,0.15); }
+.glow-blue  { box-shadow: 0 0 30px rgba(59,130,246,0.15); }
+
+/* ── Dot pattern overlay ── */
+.dot-pattern {
+  background-image: radial-gradient(rgba(255,255,255,0.06) 1px, transparent 1px);
+  background-size: 24px 24px;
 }
