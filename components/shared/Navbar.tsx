@@ -2,13 +2,15 @@
 
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import { LogOut, Award, Utensils } from 'lucide-react'
+import { LogOut, Award, Utensils, Key, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 export default function Navbar({ role }: { role: 'DONOR' | 'NGO' }) {
   const supabase = createClient()
   const router = useRouter()
   const [profile, setProfile] = useState<any>(null)
+  const [showPwdModal, setShowPwdModal] = useState(false)
+  const [newPwd, setNewPwd] = useState('')
 
   useEffect(() => {
     let interval: NodeJS.Timeout
@@ -27,6 +29,17 @@ export default function Navbar({ role }: { role: 'DONOR' | 'NGO' }) {
     await supabase.auth.signOut()
     router.push('/login')
     router.refresh()
+  }
+
+  const handleChangePwd = async () => {
+    if (newPwd.length < 6) return alert('Password must be at least 6 characters')
+    const { error } = await supabase.auth.updateUser({ password: newPwd })
+    if (error) alert(error.message)
+    else {
+      alert('Password successfully updated!')
+      setShowPwdModal(false)
+      setNewPwd('')
+    }
   }
 
   const isDonor = role === 'DONOR'
@@ -82,13 +95,40 @@ export default function Navbar({ role }: { role: 'DONOR' | 'NGO' }) {
               {(profile?.full_name || 'U')[0].toUpperCase()}
             </div>
 
+            <button onClick={() => setShowPwdModal(true)}
+              className="text-zinc-500 hover:text-blue-400 transition-colors p-2 rounded-lg hover:bg-blue-500/10" title="Change Password">
+              <Key size={17} />
+            </button>
+
             <button onClick={handleLogout}
-              className="text-zinc-500 hover:text-red-400 transition-colors p-2 rounded-lg hover:bg-red-500/10">
+              className="text-zinc-500 hover:text-red-400 transition-colors p-2 rounded-lg hover:bg-red-500/10" title="Log Out">
               <LogOut size={17} />
             </button>
           </div>
         </div>
       </div>
+
+      {showPwdModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl shadow-2xl w-full max-w-sm relative">
+            <button onClick={() => setShowPwdModal(false)} className="absolute top-4 right-4 text-zinc-500 hover:text-white"><X size={18} /></button>
+            <h3 className="text-lg font-bold text-white mb-4">Change Password</h3>
+            <input 
+              type="password" 
+              placeholder="New Password (min 6 chars)" 
+              value={newPwd}
+              onChange={(e) => setNewPwd(e.target.value)}
+              className="w-full px-4 py-3 rounded-xl border border-zinc-700 bg-zinc-800 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm mb-4"
+            />
+            <button 
+              onClick={handleChangePwd}
+              className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl transition-colors shadow-lg"
+            >
+              Update Password
+            </button>
+          </div>
+        </div>
+      )}
     </nav>
   )
 }

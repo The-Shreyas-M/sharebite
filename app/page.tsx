@@ -14,7 +14,7 @@ export default function Home() {
             <span className="font-extrabold text-xl tracking-tight">Share<span className="text-blue-400">Bite</span></span>
           </div>
           <div className="flex items-center gap-4">
-            <Link href="/login" className="text-sm font-semibold text-zinc-400 hover:text-white transition-colors">SignIn</Link>
+            <Link href="/login" className="text-sm font-semibold text-zinc-400 hover:text-white transition-colors">Sign In</Link>
             <Link href="/register" className="text-sm font-bold bg-white text-black px-4 py-2 rounded-lg hover:bg-zinc-200 transition-colors">Get Started</Link>
           </div>
         </div>

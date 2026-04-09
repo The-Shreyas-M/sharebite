@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
-import { CheckCircle2, Clock, MapPin, Users, Info, Lock } from 'lucide-react'
+import { CheckCircle2, Clock, MapPin, Users, Info, Lock, Maximize2, X } from 'lucide-react'
 
 export default function FoodList() {
   const [posts, setPosts] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [expandedImage, setExpandedImage] = useState<string | null>(null)
   const supabase = createClient()
 
   const fetchPosts = async () => {
@@ -61,7 +62,7 @@ export default function FoodList() {
   const handleDecline = async (postId: string, claimedById: string) => {
     const { error } = await supabase
       .from('food_posts')
-      .update({ status: 'available', claimed_by: null, proof_image_url: null })
+      .update({ status: 'available', claimed_by: null, proof_image_url: null, expiry_time: new Date().toISOString() })
       .eq('id', postId)
 
     if (!error) {
@@ -153,7 +154,12 @@ export default function FoodList() {
                 <div className="text-xs font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1">
                   <Info size={12} /> Delivery Proof
                 </div>
-                <img src={post.proof_image_url} className="w-full h-32 object-cover rounded-lg border border-blue-500/20" alt="Delivery proof" />
+                <div className="relative group cursor-pointer" onClick={() => setExpandedImage(post.proof_image_url)}>
+                  <img src={post.proof_image_url} className="w-full h-32 object-cover rounded-lg border border-blue-500/20 group-hover:opacity-80 transition-opacity" alt="Delivery proof" />
+                  <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="bg-black/50 p-2 rounded-full"><Maximize2 size={20} className="text-white" /></div>
+                  </div>
+                </div>
                 <div className="grid grid-cols-2 gap-2 mt-2">
                   <button
                     onClick={() => handleDecline(post.id, post.claimed_by)}
@@ -185,6 +191,13 @@ export default function FoodList() {
           <div className="text-5xl mb-4 opacity-50">🍱</div>
           <p className="font-semibold text-lg text-zinc-300">No posts yet</p>
           <p className="text-sm mt-1">Click &quot;Post Surplus Food&quot; above to get started!</p>
+        </div>
+      )}
+
+      {expandedImage && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm cursor-pointer" onClick={() => setExpandedImage(null)}>
+          <button className="absolute top-6 right-6 text-white hover:text-red-400 transition-colors bg-zinc-900 p-2 rounded-full border border-zinc-800"><X size={24} /></button>
+          <img src={expandedImage} className="max-w-full max-h-[90vh] rounded-xl object-contain border border-zinc-800 shadow-2xl" alt="Expanded proof" />
         </div>
       )}
     </div>
