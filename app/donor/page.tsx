@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import PostFoodForm from '@/components/donor/PostFoodForm'
 import FoodList from '@/components/donor/FoodList'
 import Navbar from '@/components/shared/Navbar'

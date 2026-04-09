@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase'
+import { getUserDeduped } from '@/lib/auth-client'
 import { Loader2, Plus, Upload, X } from 'lucide-react'
 
 export default function PostFoodForm({ onPostCreated }: { onPostCreated: () => void }) {
@@ -19,7 +20,7 @@ export default function PostFoodForm({ onPostCreated }: { onPostCreated: () => v
     e.preventDefault()
     setLoading(true)
     try {
-      const { data: { user } } = await supabase.auth.getUser()
+      const user = await getUserDeduped(supabase)
       if (!user) return
 
       let imageUrl = null
@@ -44,8 +45,9 @@ export default function PostFoodForm({ onPostCreated }: { onPostCreated: () => v
       setIsOpen(false)
       setName(''); setFeeds(''); setExpiryDate(''); setExpiryTime(''); setLocation(''); setImage(null)
       onPostCreated()
-    } catch (err: any) {
-      alert(err.message)
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Something went wrong'
+      alert(message)
     } finally {
       setLoading(false)
     }

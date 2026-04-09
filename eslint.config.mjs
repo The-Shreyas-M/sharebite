@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+
+    // Local debug scripts (not part of app runtime)
+    "migrate.js",
+    "test_*.js",
   ]),
 ]);
 

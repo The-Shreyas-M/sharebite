@@ -1,28 +1,76 @@
 'use client'
 
 import { createClient } from '@/lib/supabase'
+import { getUserDeduped } from '@/lib/auth-client'
 import { useRouter } from 'next/navigation'
-import { LogOut, Award, Utensils, Key, X } from 'lucide-react'
+import { LogOut, Award, Utensils, Key, X, Star } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import type { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/supabase-js'
+
+type ProfileRow = {
+  id: string
+  role: 'DONOR' | 'NGO'
+  full_name: string | null
+  impact_points: number | null
+  is_blacklisted?: boolean
+}
 
 export default function Navbar({ role }: { role: 'DONOR' | 'NGO' }) {
   const supabase = createClient()
   const router = useRouter()
-  const [profile, setProfile] = useState<any>(null)
+  const [profile, setProfile] = useState<ProfileRow | null>(null)
+  const [donorRating, setDonorRating] = useState<{ avg_rating: number; ratings_count: number } | null>(null)
   const [showPwdModal, setShowPwdModal] = useState(false)
   const [newPwd, setNewPwd] = useState('')
 
   useEffect(() => {
-    let interval: NodeJS.Timeout
-    const fetchProfile = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
+    let channel: RealtimeChannel | null = null
+    let cancelled = false
+    const channelId = `${Date.now()}-${Math.random().toString(16).slice(2)}`
+
+    const init = async () => {
+      const user = await getUserDeduped(supabase)
       if (!user) return
+
       const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single()
-      setProfile(data)
+      if (!cancelled) setProfile(data as unknown as ProfileRow)
+
+      if (role === 'DONOR') {
+        const { data: ratingRow } = await supabase
+          .from('donor_rating_summary')
+          .select('avg_rating, ratings_count')
+          .eq('donor_id', user.id)
+          .maybeSingle()
+
+        if (!cancelled) {
+          setDonorRating({
+            avg_rating: Number((ratingRow as { avg_rating?: unknown } | null)?.avg_rating ?? 0),
+            ratings_count: Number((ratingRow as { ratings_count?: unknown } | null)?.ratings_count ?? 0),
+          })
+        }
+      }
+
+      channel = supabase
+        .channel(`nav-profile-${channelId}`)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'profiles', filter: `id=eq.${user.id}` },
+          (payload: RealtimePostgresChangesPayload<ProfileRow>) => {
+            const next = payload.new
+            if (next && typeof next === 'object' && 'id' in next) {
+              setProfile(next as ProfileRow)
+            }
+          }
+        )
+        .subscribe()
     }
-    fetchProfile()
-    interval = setInterval(fetchProfile, 3000)
-    return () => clearInterval(interval)
+
+    init()
+
+    return () => {
+      cancelled = true
+      if (channel) supabase.removeChannel(channel)
+    }
   }, [])
 
   const handleLogout = async () => {
@@ -76,6 +124,19 @@ export default function Navbar({ role }: { role: 'DONOR' | 'NGO' }) {
                 <div>
                   <p className="text-[9px] uppercase tracking-wider font-bold text-green-600 leading-none">Impact</p>
                   <p className="text-base font-extrabold text-green-400 leading-none">{profile.impact_points || 0}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Donor rating */}
+            {isDonor && donorRating && (
+              <div className="hidden sm:flex items-center gap-2 bg-yellow-500/10 border border-yellow-500/20 px-3 py-1.5 rounded-xl">
+                <Star size={15} className="text-yellow-400" />
+                <div>
+                  <p className="text-[9px] uppercase tracking-wider font-bold text-yellow-600 leading-none">Rating</p>
+                  <p className="text-base font-extrabold text-yellow-400 leading-none">
+                    {donorRating.avg_rating.toFixed(1)} <span className="text-[11px] text-zinc-400 font-bold">({donorRating.ratings_count})</span>
+                  </p>
                 </div>
               </div>
             )}

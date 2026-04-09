@@ -1,55 +1,148 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase'
-import { Camera, CheckCircle2, Clock, Loader2, MapPin, PackageCheck, Trophy, Users } from 'lucide-react'
+import { getUserDeduped } from '@/lib/auth-client'
+import { Camera, Clock, Loader2, MapPin, PackageCheck, Trophy, Users, Star } from 'lucide-react'
+import type { RealtimeChannel } from '@supabase/supabase-js'
+
+type FoodStatus = 'available' | 'claimed' | 'picked_up' | 'delivered' | 'confirmed' | 'wasted'
+
+type FoodPostRow = {
+  id: string
+  donor_id: string
+  name: string
+  feeds: number
+  location: string
+  image_url: string | null
+  expiry_time: string
+  created_at: string
+  status: FoodStatus
+  proof_image_url: string | null
+  donor_profile?: { full_name: string | null } | null
+}
+
+type DonorRatingRow = {
+  post_id: string
+  rating: number
+}
 
 export default function MyClaims() {
-  const [posts, setPosts] = useState<any[]>([])
+  const [posts, setPosts] = useState<FoodPostRow[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState<string | null>(null)
+  const [ratedByPostId, setRatedByPostId] = useState<Record<string, number>>({})
+  const [ratingSubmitting, setRatingSubmitting] = useState<string | null>(null)
   const supabase = createClient()
+  const ngoIdRef = useRef<string | null>(null)
+  const refreshInFlightRef = useRef<Promise<void> | null>(null)
+  const refreshQueuedRef = useRef(false)
 
-  const fetchClaims = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+  const fetchClaimsFor = async (ngoId: string) => {
+
+    try {
+      await supabase.rpc('expire_overdue_posts')
+    } catch {
+      // ignore if migration not applied yet
+    }
 
     const { data, error } = await supabase
       .from('food_posts')
       .select('*, donor_profile:profiles!food_posts_donor_id_fkey(full_name)')
-      .eq('claimed_by', user.id)
-      .in('status', ['claimed', 'picked_up', 'delivered', 'confirmed'])
+      .eq('claimed_by', ngoId)
+      .in('status', ['claimed', 'picked_up', 'delivered', 'confirmed', 'wasted'])
       .order('created_at', { ascending: false })
 
     if (error) console.error('Claims fetch error:', error)
     if (!error && data) {
-      // Lazy Auto-Decline check
-      const now = new Date()
-      let needsRefresh = false
-      for (const p of data) {
-        if (p.status === 'claimed' || p.status === 'picked_up') {
-          const expiryTime = new Date(p.expiry_time)
-          const threshold = new Date(expiryTime.getTime() - 30 * 60000)
-          if (now > threshold) {
-            await supabase.from('food_posts').update({ status: 'available', claimed_by: null, proof_image_url: null }).eq('id', p.id)
-            if (p.claimed_by) {
-              const { error: rpcErr } = await supabase.rpc('increment_impact_points', { user_id: p.claimed_by, points: -1 })
-              if (rpcErr) console.error('RPC Error on auto-decline:', rpcErr.message)
-            }
-            needsRefresh = true
-          }
-        }
+      const typedPosts = data as unknown as FoodPostRow[]
+      setPosts(typedPosts)
+
+      // Load my ratings for these posts (so we don't show rating UI twice)
+      const postIds = typedPosts.map((p) => p.id)
+      if (postIds.length > 0) {
+        const { data: ratings } = await supabase
+          .from('donor_ratings')
+          .select('post_id, rating')
+          .eq('ngo_id', ngoId)
+          .in('post_id', postIds)
+        const map: Record<string, number> = {}
+        for (const r of (ratings || []) as unknown as DonorRatingRow[]) map[r.post_id] = r.rating
+        setRatedByPostId(map)
+      } else {
+        setRatedByPostId({})
       }
-      if (needsRefresh) {
-        fetchClaims()
-        return
-      }
-      setPosts(data)
     }
     setLoading(false)
   }
 
-  useEffect(() => { fetchClaims() }, [])
+  const refresh = async () => {
+    const ngoId = ngoIdRef.current
+    if (!ngoId) {
+      setLoading(false)
+      return
+    }
+
+    if (refreshInFlightRef.current) {
+      refreshQueuedRef.current = true
+      return
+    }
+
+    refreshInFlightRef.current = (async () => {
+      await fetchClaimsFor(ngoId)
+    })()
+
+    try {
+      await refreshInFlightRef.current
+    } finally {
+      refreshInFlightRef.current = null
+      if (refreshQueuedRef.current) {
+        refreshQueuedRef.current = false
+        void refresh()
+      }
+    }
+  }
+
+  useEffect(() => {
+    let channelPosts: RealtimeChannel | null = null
+    let channelRatings: RealtimeChannel | null = null
+    const channelId = `${Date.now()}-${Math.random().toString(16).slice(2)}`
+
+    const init = async () => {
+      const user = await getUserDeduped(supabase)
+      if (!user) return
+      ngoIdRef.current = user.id
+
+      // Subscribe first to avoid missing updates during the initial fetch.
+
+      channelPosts = supabase
+        .channel(`ngo-claims-${channelId}`)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'food_posts', filter: `claimed_by=eq.${user.id}` },
+          () => refresh()
+        )
+        .subscribe()
+
+      channelRatings = supabase
+        .channel(`ngo-ratings-${channelId}`)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'donor_ratings', filter: `ngo_id=eq.${user.id}` },
+          () => refresh()
+        )
+        .subscribe()
+
+      await refresh()
+    }
+
+    init()
+
+    return () => {
+      if (channelPosts) supabase.removeChannel(channelPosts)
+      if (channelRatings) supabase.removeChannel(channelRatings)
+    }
+  }, [])
 
   const handleComplete = async (postId: string, file: File) => {
     setUploading(postId)
@@ -69,13 +162,14 @@ export default function MyClaims() {
 
       const { error: updateError } = await supabase
         .from('food_posts')
-        .update({ status: 'delivered', proof_image_url: publicUrl })
+        .update({ status: 'delivered', proof_image_url: publicUrl, delivered_at: new Date().toISOString() })
         .eq('id', postId)
 
       if (updateError) throw updateError
-      fetchClaims()
-    } catch (err: any) {
-      alert(err.message)
+      refresh()
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Upload failed'
+      alert(message)
     } finally {
       setUploading(null)
     }
@@ -84,7 +178,34 @@ export default function MyClaims() {
   if (loading) return null
 
   const activeClaims = posts.filter(p => p.status === 'claimed' || p.status === 'picked_up')
-  const history = posts.filter(p => p.status === 'delivered' || p.status === 'confirmed')
+  const history = posts.filter(p => p.status === 'delivered' || p.status === 'confirmed' || p.status === 'wasted')
+
+  const submitRating = async (post: FoodPostRow, rating: number) => {
+    if (ratedByPostId[post.id]) return
+    setRatingSubmitting(post.id)
+    try {
+      let ngoId = ngoIdRef.current
+      if (!ngoId) {
+        const user = await getUserDeduped(supabase)
+        ngoId = user?.id ?? null
+        ngoIdRef.current = ngoId
+      }
+      if (!ngoId) return
+      const { error } = await supabase.from('donor_ratings').insert({
+        post_id: post.id,
+        donor_id: post.donor_id,
+        ngo_id: ngoId,
+        rating,
+      })
+      if (error) throw error
+      setRatedByPostId((m) => ({ ...m, [post.id]: rating }))
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Rating failed'
+      alert(message)
+    } finally {
+      setRatingSubmitting(null)
+    }
+  }
 
   return (
     <>
@@ -170,9 +291,11 @@ export default function MyClaims() {
                     <span className={`text-[10px] uppercase tracking-wider font-bold px-2.5 py-1 rounded-full shrink-0 ${
                       post.status === 'confirmed'
                         ? 'badge-confirmed'
+                        : post.status === 'wasted'
+                        ? 'bg-red-500/10 text-red-400 border border-red-500/30'
                         : 'badge-delivered'
                     }`}>
-                      {post.status === 'confirmed' ? '✓ Confirmed' : '⏳ Awaiting'}
+                      {post.status === 'confirmed' ? '✓ Confirmed' : post.status === 'wasted' ? '✕ Wasted' : '⏳ Awaiting'}
                     </span>
                   </div>
                   <p className="text-xs text-zinc-500 mt-1 flex items-center gap-3">
@@ -183,6 +306,35 @@ export default function MyClaims() {
                     <p className="text-xs text-green-400 font-bold mt-1.5 flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-green-400 glow-green" /> +1 impact point earned
                     </p>
+                  )}
+
+                  {post.status === 'confirmed' && (
+                    <div className="mt-3 flex items-center justify-between gap-3">
+                      <div className="text-xs text-zinc-400 font-semibold">
+                        Rate donor food quality
+                      </div>
+                      {ratedByPostId[post.id] ? (
+                        <div className="flex items-center gap-1 text-yellow-400">
+                          {[1, 2, 3, 4, 5].map((i) => (
+                            <Star key={i} size={14} className={i <= ratedByPostId[post.id] ? 'fill-current' : ''} />
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1">
+                          {[1, 2, 3, 4, 5].map((i) => (
+                            <button
+                              key={i}
+                              disabled={ratingSubmitting === post.id}
+                              onClick={() => submitRating(post, i)}
+                              className="text-yellow-400 hover:text-yellow-300 disabled:opacity-50"
+                              title={`${i} star${i === 1 ? '' : 's'}`}
+                            >
+                              <Star size={16} />
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
