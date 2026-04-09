@@ -2,7 +2,8 @@
 -- SHAREBITE HARD RESET SCRIPT
 -- ============================================
 -- WARNING: Running this will wipe all Users, Posts, and Impact Points!
--- Use this ONLY if you need to completely clear your database for production.
+-- Use this ONLY for local/dev/testing.
+-- Do NOT run in production unless you intentionally want to delete everything.
 
 BEGIN;
 
